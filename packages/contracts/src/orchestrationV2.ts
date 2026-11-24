@@ -793,6 +793,10 @@ export const OrchestrationV2ThreadLaunchWorkspaceStrategy = Schema.Union([
     type: Schema.Literal("worktree"),
     baseRef: GitRefName,
     branch: Schema.optional(GitRefName),
+    checkoutExistingBranch: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Set by the app's branch picker, not by agents: `branch` is an existing local branch to check out, not a name to create.",
+    }),
     startFromOrigin: Schema.optional(Schema.Boolean),
     repositories: Schema.optional(
       Schema.Array(Schema.Struct({ path: TrimmedNonEmptyString }))

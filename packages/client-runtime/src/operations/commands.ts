@@ -183,6 +183,8 @@ interface StartThreadBootstrap {
     readonly projectCwd: string;
     readonly baseBranch: string;
     readonly branch?: string;
+    /** `branch` names an existing local branch to check out; `baseBranch` should equal it. */
+    readonly checkoutExistingBranch?: boolean;
     readonly startFromOrigin?: boolean;
     /** Tracked repositories to give a worktree; absent leaves the choice to the server. */
     readonly repositories?: ReadonlyArray<{ readonly path: string }>;
@@ -806,6 +808,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
             type: "worktree" as const,
             baseRef: prepareWorktree.baseBranch,
             ...(prepareWorktree.branch === undefined ? {} : { branch: prepareWorktree.branch }),
+            ...(prepareWorktree.checkoutExistingBranch === undefined
+              ? {}
+              : { checkoutExistingBranch: prepareWorktree.checkoutExistingBranch }),
             ...(prepareWorktree.startFromOrigin === undefined
               ? {}
               : { startFromOrigin: prepareWorktree.startFromOrigin }),

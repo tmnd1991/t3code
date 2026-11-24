@@ -3069,6 +3069,23 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
   );
 
+  it.effect("creates a ref from the given start point instead of HEAD", () =>
+    Effect.gen(function* () {
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const cwd = yield* makeTmpDir();
+      const { initialBranch } = yield* initRepoWithCommit(cwd);
+      const startPoint = yield* git(cwd, ["rev-parse", "HEAD"]);
+      yield* git(cwd, ["switch", "-c", "elsewhere"]);
+      yield* git(cwd, ["commit", "--allow-empty", "-m", "moves HEAD off the start point"]);
+
+      yield* driver.createRef({ cwd, refName: "from-base", baseRefName: initialBranch });
+      yield* driver.createRef({ cwd, refName: "from-head" });
+
+      assert.equal(yield* git(cwd, ["rev-parse", "from-base"]), startPoint);
+      assert.notEqual(yield* git(cwd, ["rev-parse", "from-head"]), startPoint);
+    }),
+  );
+
   it.effect("lists the other checkouts a thread could reuse, including detached ones", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -194,6 +194,8 @@ export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: GitRefName,
+  // Where the new ref starts; absent branches from the checkout's HEAD.
+  baseRefName: Schema.optional(GitRefName),
   switchRef: Schema.optional(Schema.Boolean),
 });
 export type VcsCreateRefInput = typeof VcsCreateRefInput.Type;

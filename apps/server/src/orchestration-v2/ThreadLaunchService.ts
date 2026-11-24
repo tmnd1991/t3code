@@ -82,6 +82,7 @@ export type ThreadLaunchWorkspaceStrategy =
       readonly type: "worktree";
       readonly baseRef: string;
       readonly branch?: string | undefined;
+      readonly checkoutExistingBranch?: boolean | undefined;
       readonly startFromOrigin?: boolean | undefined;
       readonly repositories?: ReadonlyArray<{ readonly path: string }> | undefined;
     };
@@ -461,6 +462,17 @@ const make = Effect.gen(function* () {
         workspaceRoot: project.workspaceRoot,
         baseRef,
       });
+    if (strategy.checkoutExistingBranch === true) {
+      // Reusing a branch is the point, so only a missing one is refused; Git refuses a busy one.
+      if (branch === undefined || !localBranches.includes(branch))
+        return yield* new ThreadLaunchBaseRefError({
+          projectId: project.id,
+          projectTitle: project.title,
+          workspaceRoot: project.workspaceRoot,
+          baseRef: branch ?? baseRef,
+        });
+      return;
+    }
     if (branch === undefined) return;
     if (localBranches.includes(branch))
       return yield* new ThreadLaunchBranchExistsError({
@@ -639,6 +651,10 @@ const make = Effect.gen(function* () {
       );
 
       const requestedBranch = input.workspaceStrategy.branch;
+      // The branch is the user's own, so cleanup may remove the worktree but never the branch.
+      const checkoutExisting =
+        input.workspaceStrategy.type === "worktree" &&
+        input.workspaceStrategy.checkoutExistingBranch === true;
       const generatedTemporaryBranch =
         input.workspaceStrategy.type === "worktree" && requestedBranch === undefined;
       let branch: string | null;
@@ -669,6 +685,7 @@ const make = Effect.gen(function* () {
         initialMessage !== undefined &&
         (input.workspaceStrategy.type === "worktree" || worktreePath !== null) &&
         branch !== null &&
+        !checkoutExisting &&
         (generatedTemporaryBranch || isTemporaryWorktreeBranch(branch))
           ? yield* generateBranchNameFor(
               worktreePath ?? project.workspaceRoot,
@@ -682,6 +699,15 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
         // A plain project folder has no branch of its own to fetch or start from.
         const projectIsRepository = taskPlan === null || taskPlan.projectIsRepository;
+        if (checkoutExisting && taskPlan !== null) {
+          return yield* new ThreadLaunchError({
+            operation: "provision-worktree",
+            commandId: input.commandId,
+            projectId: input.projectId,
+            threadId,
+            cause: new Error("Checking out an existing branch needs a single-repository project."),
+          });
+        }
         if (runId !== null) {
           yield* threads
             .dispatch({
@@ -697,7 +723,9 @@ const make = Effect.gen(function* () {
         let startRef = requestedBaseRef;
         let baseRefName = requestedBaseRef;
         const remote =
-          input.workspaceStrategy.startFromOrigin === true && projectIsRepository
+          input.workspaceStrategy.startFromOrigin === true &&
+          projectIsRepository &&
+          !checkoutExisting
             ? yield* git
                 .resolveWorktreeBaseRemote({
                   cwd: project.workspaceRoot,
@@ -783,7 +811,7 @@ const make = Effect.gen(function* () {
             Effect.sync(() => {
               createdWorktreePath = path;
               // A task folder has already claimed the name its repositories share.
-              createdBranch ??= branch;
+              if (!checkoutExisting) createdBranch ??= branch;
             }),
           onCheckoutProgress: (progress) =>
             setupTracker.stage(threadId, "checkout", { percent: progress.percent }),
@@ -823,9 +851,8 @@ const make = Effect.gen(function* () {
                 .createWorktree(
                   {
                     cwd: project.workspaceRoot,
-                    refName: startRef,
-                    newRefName: branch!,
-                    baseRefName,
+                    refName: checkoutExisting ? branch! : startRef,
+                    ...(checkoutExisting ? {} : { newRefName: branch!, baseRefName }),
                     path: null,
                   },
                   { progress },
@@ -876,7 +903,7 @@ const make = Effect.gen(function* () {
         worktreePath = worktree.path;
         branch = worktree.refName;
         createdWorktreePath = worktreePath;
-        createdBranch = branch;
+        createdBranch = checkoutExisting ? null : branch;
         yield* setupTracker.update(threadId, (snapshot) => ({
           ...snapshot,
           worktreePath,
@@ -909,6 +936,7 @@ const make = Effect.gen(function* () {
         worktreePath !== null &&
         branch !== null &&
         initialMessage !== undefined &&
+        !checkoutExisting &&
         (generatedTemporaryBranch || isTemporaryWorktreeBranch(branch))
       ) {
         const oldBranch = branch;

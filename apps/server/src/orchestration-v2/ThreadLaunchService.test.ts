@@ -3884,6 +3884,54 @@ it.effect.each([
   }),
 );
 
+it.effect("checks out an existing branch into a new worktree without renaming or deleting it", () =>
+  Effect.gen(function* () {
+    const entered = yield* Deferred.make<void>();
+    const harness = makeHarness({
+      hasCommit: () => Effect.succeed(true),
+      git: { listLocalBranchNames: () => Effect.succeed(["main", "feature/mine"]) },
+      runSetup: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const workspace = {
+        type: "worktree" as const,
+        baseRef: "feature/mine",
+        branch: "feature/mine",
+        checkoutExistingBranch: true,
+      };
+      const commandId = CommandId.make("launch:existing-branch");
+      const check = (branch: string) =>
+        launches.checkWorktreeBase({
+          commandId,
+          projectId,
+          workspaceStrategy: { ...workspace, baseRef: branch, branch },
+        });
+      yield* check("feature/mine");
+      const missing = yield* check("feature/gone").pipe(Effect.flip);
+      assert.equal(missing._tag, "ThreadLaunchBaseRefError");
+
+      const launched = yield* launches.launch(
+        launchInput({
+          command: commandId,
+          thread: "thread:existing-branch",
+          message: "Start",
+          workspace,
+        }),
+      );
+      yield* Deferred.await(entered);
+      const created = harness.createWorktree.mock.calls[0]?.[0];
+      assert.equal(created?.refName, "feature/mine");
+      assert.isUndefined(created?.newRefName);
+      assert.isEmpty(harness.renameBranch.mock.calls);
+
+      assert.isTrue(yield* tracker.cancel(launched.threadId));
+      assert.isEmpty(harness.deleteLocalBranch.mock.calls);
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
 it.effect("replays an accepted send after the project disables the instance", () => {
   const harness = makeHarness();
   const layerFiles = ServerConfig.layerTest(process.cwd(), { prefix: "t3-send-retry-" }).pipe(
