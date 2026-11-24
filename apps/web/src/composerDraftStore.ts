@@ -1827,9 +1827,9 @@ function worktreeBranchesEqual(
   right: DraftWorktreeBranch | undefined,
 ): boolean {
   if (left === undefined || right === undefined) return left === right;
-  return (
-    left.kind === right.kind && (left.kind !== "new" || left.name === (right as typeof left).name)
-  );
+  return left.kind === "new"
+    ? right.kind === "new" && left.name === right.name
+    : right.kind === "existing";
 }
 
 function worktreeRepositoriesEqual(
@@ -2006,6 +2006,7 @@ function normalizePersistedDraftThreads(
       const checkoutPullRequest = normalizePersistedCheckoutPullRequest(
         candidateDraftThread.checkoutPullRequest,
       );
+      const worktreeBranch = normalizeWorktreeBranch(candidateDraftThread.worktreeBranch);
       const promotedToCandidate = candidateDraftThread.promotedTo;
       const promotedToRecord =
         promotedToCandidate && typeof promotedToCandidate === "object"
@@ -2071,9 +2072,7 @@ function normalizePersistedDraftThreads(
               ),
             }
           : {}),
-        ...(normalizeWorktreeBranch(candidateDraftThread.worktreeBranch)
-          ? { worktreeBranch: normalizeWorktreeBranch(candidateDraftThread.worktreeBranch)! }
-          : {}),
+        ...(worktreeBranch ? { worktreeBranch } : {}),
         promotedTo,
       };
     }

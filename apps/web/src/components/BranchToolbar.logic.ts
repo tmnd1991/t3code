@@ -212,10 +212,14 @@ export function resolveExistingWorktreeOptions(input: {
       (right.updatedAt ?? -Infinity) - (left.updatedAt ?? -Infinity) ||
       (left.branch ?? left.worktreePath).localeCompare(right.branch ?? right.worktreePath),
   );
-  return options.map((option, index) => ({
+  // The worktree the draft already sits in is not "previous"; it is where the draft is.
+  const previous = options.find(
+    (option) => option.updatedAt !== null && option.worktreePath !== current?.worktreePath,
+  );
+  return options.map((option) => ({
     branch: option.branch,
     worktreePath: option.worktreePath,
-    previous: index === 0 && option.updatedAt !== null,
+    previous: option === previous,
   }));
 }
 

@@ -108,9 +108,12 @@ export function WorktreeBranchChoice({
     (item) => item !== AUTO_BRANCH_ITEM || trimmedQuery.length === 0,
   );
 
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) setQuery("");
+  };
   const close = () => {
-    setOpen(false);
-    setQuery("");
+    handleOpenChange(false);
     onComposerFocusRequest?.();
   };
 
@@ -226,10 +229,7 @@ export function WorktreeBranchChoice({
       items={items}
       filteredItems={filteredItems}
       open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setQuery("");
-      }}
+      onOpenChange={handleOpenChange}
       onSelectItem={selectItem}
       value={choice?.kind === "new" ? null : (draftThread?.branch ?? null)}
       query={query}

@@ -526,6 +526,25 @@ describe("resolveExistingWorktreeOptions", () => {
     ).toEqual([{ branch: "current", worktreePath: "/wt/current", previous: false }]);
   });
 
+  it("never calls the current worktree the previous one", () => {
+    expect(
+      resolveExistingWorktreeOptions({
+        listed: [
+          { path: "/wt/current", refName: "current" },
+          { path: "/wt/other", refName: "other" },
+        ],
+        threads: [
+          thread("/wt/current", "2026-03-01T00:00:00.000Z"),
+          thread("/wt/other", "2026-02-01T00:00:00.000Z"),
+        ],
+        current: { worktreePath: "/wt/current", branch: "current" },
+      }),
+    ).toEqual([
+      { branch: "current", worktreePath: "/wt/current", previous: false },
+      { branch: "other", worktreePath: "/wt/other", previous: true },
+    ]);
+  });
+
   it("offers the worktree a thread used last, and the current one, until the list loads", () => {
     expect(
       resolveExistingWorktreeOptions({

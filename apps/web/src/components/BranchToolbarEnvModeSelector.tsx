@@ -64,7 +64,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
     { value: "worktree", label: resolveEnvModeLabel("worktree", m) },
     ...worktreeOptions.map((option) => ({
       value: existingWorktreeValue(option.worktreePath),
-      label: option.branch ?? option.worktreePath,
+      label: option.branch ?? resolveLockedWorkspaceLabel(option.worktreePath, "local", m),
     })),
   ];
   const selectedValue = activeWorktreePath
