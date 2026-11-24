@@ -2912,6 +2912,34 @@ describe("composerDraftStore checkout pull request", () => {
     expect(store().getDraftSession(draftId)?.worktreeRepositories).toBeUndefined();
   });
 
+  it("keeps the worktree branch choice only while the draft heads for a new worktree", () => {
+    store().setProjectDraftThreadId(projectRef, draftId, { threadId, envMode: "worktree" });
+    store().setDraftThreadContext(draftId, { worktreeBranch: { kind: "new", name: "feature/x" } });
+    // An unrelated change keeps the choice.
+    store().setDraftThreadContext(draftId, { branch: "main" });
+    expect(store().getDraftSession(draftId)?.worktreeBranch).toEqual({
+      kind: "new",
+      name: "feature/x",
+    });
+
+    store().setDraftThreadContext(draftId, { worktreeBranch: { kind: "existing" } });
+    expect(store().getDraftSession(draftId)?.worktreeBranch).toEqual({ kind: "existing" });
+    store().setDraftThreadContext(draftId, { worktreeBranch: null });
+    expect(store().getDraftSession(draftId)?.worktreeBranch).toBeUndefined();
+
+    store().setDraftThreadContext(draftId, { worktreeBranch: { kind: "existing" } });
+    store().setDraftThreadContext(draftId, { worktreePath: "/work/tree" });
+    expect(store().getDraftSession(draftId)?.worktreeBranch).toBeUndefined();
+
+    store().setDraftThreadContext(draftId, {
+      worktreePath: null,
+      envMode: "worktree",
+      worktreeBranch: { kind: "new", name: "feature/y" },
+    });
+    store().setDraftThreadContext(draftId, { envMode: "local" });
+    expect(store().getDraftSession(draftId)?.worktreeBranch).toBeUndefined();
+  });
+
   it("persists the pull request and still restores drafts saved without one", async () => {
     vi.useFakeTimers();
     try {

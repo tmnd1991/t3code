@@ -421,6 +421,12 @@ const PersistedDraftThreadState = Schema.Struct({
     Schema.Struct({ url: Schema.String, branch: Schema.String }),
   ),
   worktreeRepositories: Schema.optionalKey(Schema.Array(Schema.String)),
+  worktreeBranch: Schema.optionalKey(
+    Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("new"), name: Schema.String }),
+      Schema.Struct({ kind: Schema.Literal("existing") }),
+    ]),
+  ),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -524,8 +530,18 @@ export interface DraftSessionState {
    * until the user chooses, which leaves the choice to the server's default.
    */
   worktreeRepositories?: ReadonlyArray<string>;
+  /**
+   * What a New worktree thread runs on. Absent means a server-named branch started from `branch`;
+   * "new" is a branch the user named, started from `branch`; "existing" checks `branch` itself
+   * out in the new worktree.
+   */
+  worktreeBranch?: DraftWorktreeBranch;
   promotedTo?: ScopedThreadRef | null;
 }
+
+export type DraftWorktreeBranch =
+  | { readonly kind: "new"; readonly name: string }
+  | { readonly kind: "existing" };
 
 export type DraftThreadState = DraftSessionState;
 
@@ -631,6 +647,7 @@ interface ComposerDraftStoreState {
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
       worktreeRepositories?: ReadonlyArray<string> | null;
+      worktreeBranch?: DraftWorktreeBranch | null;
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1791,8 +1808,28 @@ function createDraftThreadState(
     ...(!projectChanged && existingThread?.worktreeRepositories !== undefined
       ? { worktreeRepositories: existingThread.worktreeRepositories }
       : {}),
+    ...(!projectChanged && existingThread?.worktreeBranch !== undefined && !nextWorktreePath
+      ? { worktreeBranch: existingThread.worktreeBranch }
+      : {}),
     promotedTo: null,
   };
+}
+
+function normalizeWorktreeBranch(value: unknown): DraftWorktreeBranch | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { kind, name } = value as { kind?: unknown; name?: unknown };
+  if (kind === "existing") return { kind };
+  return kind === "new" && typeof name === "string" && name.length > 0 ? { kind, name } : undefined;
+}
+
+function worktreeBranchesEqual(
+  left: DraftWorktreeBranch | undefined,
+  right: DraftWorktreeBranch | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return (
+    left.kind === right.kind && (left.kind !== "new" || left.name === (right as typeof left).name)
+  );
 }
 
 function worktreeRepositoriesEqual(
@@ -1853,6 +1890,7 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.startFromOrigin === right.startFromOrigin &&
     checkoutPullRequestsEqual(left.checkoutPullRequest, right.checkoutPullRequest) &&
     worktreeRepositoriesEqual(left.worktreeRepositories, right.worktreeRepositories) &&
+    worktreeBranchesEqual(left.worktreeBranch, right.worktreeBranch) &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -2032,6 +2070,9 @@ function normalizePersistedDraftThreads(
                 (path): path is string => typeof path === "string",
               ),
             }
+          : {}),
+        ...(normalizeWorktreeBranch(candidateDraftThread.worktreeBranch)
+          ? { worktreeBranch: normalizeWorktreeBranch(candidateDraftThread.worktreeBranch)! }
           : {}),
         promotedTo,
       };
@@ -2819,6 +2860,9 @@ function toHydratedDraftThreadState(
     ...(persistedDraftThread.worktreeRepositories
       ? { worktreeRepositories: persistedDraftThread.worktreeRepositories }
       : {}),
+    ...(persistedDraftThread.worktreeBranch
+      ? { worktreeBranch: persistedDraftThread.worktreeBranch }
+      : {}),
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
           persistedDraftThread.promotedTo.environmentId as EnvironmentId,
@@ -3089,6 +3133,17 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   ? undefined
                   : existing.worktreeRepositories
                 : (options.worktreeRepositories ?? undefined);
+            const nextEnvMode =
+              options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local"));
+            // Only a thread heading for a new worktree has a branch to choose.
+            const worktreeBranch =
+              nextEnvMode !== "worktree" || nextWorktreePath
+                ? undefined
+                : options.worktreeBranch === undefined
+                  ? projectChanged
+                    ? undefined
+                    : existing.worktreeBranch
+                  : (options.worktreeBranch ?? undefined);
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -3109,11 +3164,11 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               interactionMode: options.interactionMode ?? existing.interactionMode,
               branch: nextBranch,
               worktreePath: nextWorktreePath,
-              envMode:
-                options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
+              envMode: nextEnvMode,
               startFromOrigin: nextStartFromOrigin,
               ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
               ...(worktreeRepositories ? { worktreeRepositories } : {}),
+              ...(worktreeBranch ? { worktreeBranch } : {}),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -3137,6 +3192,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 nextDraftThread.worktreeRepositories,
                 existing.worktreeRepositories,
               ) &&
+              worktreeBranchesEqual(nextDraftThread.worktreeBranch, existing.worktreeBranch) &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;

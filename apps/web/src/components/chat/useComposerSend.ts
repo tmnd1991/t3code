@@ -1520,6 +1520,12 @@ export function useComposerSend(input: ComposerSendInput) {
                     prepareWorktree: {
                       projectCwd: activeProject.workspaceRoot,
                       baseBranch: baseBranchForWorktree,
+                      ...(isGitRepo && draftThread?.worktreeBranch?.kind === "new"
+                        ? { branch: draftThread.worktreeBranch.name }
+                        : {}),
+                      ...(isGitRepo && draftThread?.worktreeBranch?.kind === "existing"
+                        ? { branch: baseBranchForWorktree, checkoutExistingBranch: true }
+                        : {}),
                       ...(startFromOrigin ? { startFromOrigin: true } : {}),
                       ...(worktreeRepositories ? { repositories: worktreeRepositories } : {}),
                     },
