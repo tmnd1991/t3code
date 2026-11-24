@@ -7,15 +7,15 @@ import { MiddleTruncate } from "./ui/middle-truncate";
 const EXISTING_WORKTREE_VALUE_PREFIX = "existing-worktree:";
 
 /** Select values are strings, so an option travels through the menu as its prefixed path. */
-export const existingWorktreeValue = (option: ExistingWorktreeOption) =>
-  `${EXISTING_WORKTREE_VALUE_PREFIX}${option.worktreePath}`;
+export const existingWorktreeValue = (worktreePath: string) =>
+  `${EXISTING_WORKTREE_VALUE_PREFIX}${worktreePath}`;
 
 export const findExistingWorktree = (
   options: readonly ExistingWorktreeOption[],
   value: string | null,
 ) =>
   value?.startsWith(EXISTING_WORKTREE_VALUE_PREFIX)
-    ? options.find((option) => existingWorktreeValue(option) === value)
+    ? options.find((option) => existingWorktreeValue(option.worktreePath) === value)
     : undefined;
 
 export function ExistingWorktreeItemContent({ option }: { option: ExistingWorktreeOption }) {

@@ -158,8 +158,9 @@ export interface ExistingWorktreeOption {
 }
 
 /**
- * Worktrees a draft can move into, most recently used by a thread first. Until the repository's
- * list loads (or when it cannot), only the worktree a thread used last is offered.
+ * Worktrees a draft can sit in, most recently used by a thread first, always including the
+ * `current` one so a selector can show it. Until the repository's list loads (or when it cannot),
+ * only the worktree a thread used last is offered besides it.
  */
 export function resolveExistingWorktreeOptions(input: {
   listed: ReadonlyArray<{ path: string; refName: string | null }> | null;
@@ -169,7 +170,7 @@ export function resolveExistingWorktreeOptions(input: {
     updatedAt: string;
     archivedAt?: string | null;
   }>;
-  currentWorktreePath: string | null;
+  current: { worktreePath: string; branch: string | null } | null;
 }): ExistingWorktreeOption[] {
   const lastUsed = new Map<string, { branch: string | null; updatedAt: number }>();
   for (const thread of input.threads) {
@@ -192,20 +193,25 @@ export function resolveExistingWorktreeOptions(input: {
   // Until the repository's list loads, only the worktree a thread used last is known to exist.
   const fromThreads = (): Candidate[] => {
     const [latest] = [...lastUsed]
-      .filter(([worktreePath]) => worktreePath !== input.currentWorktreePath)
       .map(([worktreePath, used]) => ({ worktreePath, ...used }))
       .toSorted((left, right) => right.updatedAt - left.updatedAt);
     return latest ? [latest] : [];
   };
   const candidates = input.listed ? fromListed(input.listed) : fromThreads();
+  const { current } = input;
+  if (current && !candidates.some((candidate) => candidate.worktreePath === current.worktreePath)) {
+    candidates.push({
+      branch: current.branch,
+      worktreePath: current.worktreePath,
+      updatedAt: lastUsed.get(current.worktreePath)?.updatedAt ?? null,
+    });
+  }
 
-  const options = candidates
-    .filter((candidate) => candidate.worktreePath !== input.currentWorktreePath)
-    .toSorted(
-      (left, right) =>
-        (right.updatedAt ?? -Infinity) - (left.updatedAt ?? -Infinity) ||
-        (left.branch ?? left.worktreePath).localeCompare(right.branch ?? right.worktreePath),
-    );
+  const options = candidates.toSorted(
+    (left, right) =>
+      (right.updatedAt ?? -Infinity) - (left.updatedAt ?? -Infinity) ||
+      (left.branch ?? left.worktreePath).localeCompare(right.branch ?? right.worktreePath),
+  );
   return options.map((option, index) => ({
     branch: option.branch,
     worktreePath: option.worktreePath,

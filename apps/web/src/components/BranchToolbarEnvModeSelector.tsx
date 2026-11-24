@@ -38,6 +38,7 @@ interface BranchToolbarEnvModeSelectorProps {
   onEnvModeChange: (mode: EnvMode) => void;
   existingWorktrees?: readonly ExistingWorktreeOption[];
   onUseWorktree?: (option: ExistingWorktreeOption) => void;
+  onUseMainCheckout?: () => void;
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
@@ -48,6 +49,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   onEnvModeChange,
   existingWorktrees = [],
   onUseWorktree,
+  onUseMainCheckout,
 }: BranchToolbarEnvModeSelectorProps) {
   const gt = useGT();
   const m = useMessages();
@@ -58,16 +60,16 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   );
   const worktreeOptions = onUseWorktree ? existingWorktrees : [];
   const envModeItems = [
-    {
-      value: "local",
-      label: resolveCurrentWorkspaceLabel(activeWorktreePath, m),
-    },
+    { value: "local", label: resolveLockedWorkspaceLabel(null, "local", m) },
     { value: "worktree", label: resolveEnvModeLabel("worktree", m) },
     ...worktreeOptions.map((option) => ({
-      value: existingWorktreeValue(option),
+      value: existingWorktreeValue(option.worktreePath),
       label: option.branch ?? option.worktreePath,
     })),
   ];
+  const selectedValue = activeWorktreePath
+    ? existingWorktreeValue(activeWorktreePath)
+    : effectiveEnvMode;
 
   const stopContextMenuMouseDown = (event: ReactMouseEvent) => {
     if (event.button !== 0 || event.ctrlKey) {
@@ -112,11 +114,15 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   return (
     <Select
       modal={false}
-      value={effectiveEnvMode}
+      value={selectedValue}
       onValueChange={(value: string | null) => {
         const option = findExistingWorktree(worktreeOptions, value);
         if (option) {
           onUseWorktree?.(option);
+          return;
+        }
+        if (value === "local" && activeWorktreePath && onUseMainCheckout) {
+          onUseMainCheckout();
           return;
         }
         onEnvModeChange(value as EnvMode);
@@ -165,12 +171,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           </SelectGroupLabel>
           <SelectItem value="local">
             <span className="inline-flex items-center gap-1.5">
-              {activeWorktreePath ? (
-                <FolderGitIcon className="size-3" />
-              ) : (
-                <FolderIcon className="size-3" />
-              )}
-              {resolveCurrentWorkspaceLabel(activeWorktreePath, m)}
+              <FolderIcon className="size-3" />
+              {resolveLockedWorkspaceLabel(null, "local", m)}
             </span>
           </SelectItem>
           <SelectItem value="worktree">
@@ -186,7 +188,10 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               <T>Existing worktrees</T>
             </SelectGroupLabel>
             {worktreeOptions.map((option) => (
-              <SelectItem key={option.worktreePath} value={existingWorktreeValue(option)}>
+              <SelectItem
+                key={option.worktreePath}
+                value={existingWorktreeValue(option.worktreePath)}
+              >
                 <ExistingWorktreeItemContent option={option} />
               </SelectItem>
             ))}

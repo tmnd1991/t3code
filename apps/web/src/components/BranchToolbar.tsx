@@ -49,7 +49,11 @@ import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSele
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
-import { ExistingWorktreeItemContent } from "./ExistingWorktreeItemContent";
+import {
+  existingWorktreeValue,
+  ExistingWorktreeItemContent,
+  findExistingWorktree,
+} from "./ExistingWorktreeItemContent";
 import { useEnvironmentQuery } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
 import { WorktreeRepositoriesControl } from "./WorktreeRepositoriesControl";
@@ -178,6 +182,7 @@ interface RunContextSelectorProps {
   onEnvModeChange: (mode: EnvMode) => void;
   existingWorktrees: readonly ExistingWorktreeOption[];
   onUseWorktree: (option: ExistingWorktreeOption) => void;
+  onUseMainCheckout: () => void;
   addTargets: readonly AddProjectTarget[];
   onAddToMachine: (environmentId: EnvironmentId) => void;
 }
@@ -201,6 +206,7 @@ const RunContextSelector = memo(function RunContextSelector({
   onEnvModeChange,
   existingWorktrees,
   onUseWorktree,
+  onUseMainCheckout,
   addTargets,
   onAddToMachine,
 }: RunContextSelectorProps) {
@@ -437,8 +443,12 @@ const RunContextSelector = memo(function RunContextSelector({
               <T>Workspace</T>
             </MenuGroupLabel>
             <MenuRadioGroup
-              value={effectiveEnvMode}
-              onValueChange={(value) => onEnvModeChange(value as EnvMode)}
+              value={activeWorktreePath ? "" : effectiveEnvMode}
+              onValueChange={(value) =>
+                value === "local" && activeWorktreePath
+                  ? onUseMainCheckout()
+                  : onEnvModeChange(value as EnvMode)
+              }
             >
               <MenuRadioItem
                 disabled={envModeLocked || forceNewWorktree}
@@ -446,12 +456,8 @@ const RunContextSelector = memo(function RunContextSelector({
                 closeOnClick
               >
                 <span className="flex min-w-0 items-center gap-1.5">
-                  {activeWorktreePath ? (
-                    <FolderGitIcon className="size-3" />
-                  ) : (
-                    <FolderIcon className="size-3" />
-                  )}
-                  <MiddleTruncate value={resolveCurrentWorkspaceLabel(activeWorktreePath, m)} />
+                  <FolderIcon className="size-3" />
+                  <MiddleTruncate value={resolveLockedWorkspaceLabel(null, "local", m)} />
                 </span>
               </MenuRadioItem>
               <MenuRadioItem disabled={envModeLocked} value="worktree" closeOnClick>
@@ -468,15 +474,24 @@ const RunContextSelector = memo(function RunContextSelector({
             <MenuGroupLabel>
               <T>Existing worktrees</T>
             </MenuGroupLabel>
-            {existingWorktrees.map((option) => (
-              <MenuItem
-                key={option.worktreePath}
-                disabled={envModeLocked}
-                onClick={() => onUseWorktree(option)}
-              >
-                <ExistingWorktreeItemContent option={option} />
-              </MenuItem>
-            ))}
+            <MenuRadioGroup
+              value={activeWorktreePath ? existingWorktreeValue(activeWorktreePath) : ""}
+              onValueChange={(value) => {
+                const option = findExistingWorktree(existingWorktrees, value);
+                if (option) onUseWorktree(option);
+              }}
+            >
+              {existingWorktrees.map((option) => (
+                <MenuRadioItem
+                  key={option.worktreePath}
+                  disabled={envModeLocked}
+                  value={existingWorktreeValue(option.worktreePath)}
+                  closeOnClick
+                >
+                  <ExistingWorktreeItemContent option={option} />
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
           </MenuGroup>
         ) : null}
       </MenuPopup>
@@ -687,6 +702,14 @@ export const BranchToolbar = memo(function BranchToolbar({
   const canUseExistingWorktree = !isServerThread && !envModeLocked && !forceNewWorktree;
   const projectRefsForWorktreeLookup = canUseExistingWorktree ? [activeProjectRef] : [];
   const projectThreads = useThreadShellsForProjectRefs(projectRefsForWorktreeLookup);
+  const draftThread = useComposerDraftStore((store) =>
+    draftId ? store.getDraftSession(draftId) : store.getDraftThreadByRef(threadRef),
+  );
+  const mainCheckoutStatusQuery = useEnvironmentQuery(
+    canUseExistingWorktree && showGitControls && activeProject
+      ? vcsEnvironment.status({ environmentId, input: { cwd: activeProject.workspaceRoot } })
+      : null,
+  );
   const listedWorktreesQuery = useEnvironmentQuery(
     canUseExistingWorktree && showGitControls && activeProject
       ? vcsEnvironment.listWorktrees({
@@ -699,7 +722,9 @@ export const BranchToolbar = memo(function BranchToolbar({
     ? resolveExistingWorktreeOptions({
         listed: listedWorktreesQuery.data?.worktrees ?? null,
         threads: projectThreads,
-        currentWorktreePath: activeWorktreePath,
+        current: activeWorktreePath
+          ? { worktreePath: activeWorktreePath, branch: draftThread?.branch ?? null }
+          : null,
       })
     : [];
   const previousWorktree = existingWorktrees.find((option) => option.previous) ?? null;
@@ -708,6 +733,16 @@ export const BranchToolbar = memo(function BranchToolbar({
       branch: option.branch,
       worktreePath: option.worktreePath,
       envMode: "worktree",
+      projectRef: activeProjectRef,
+    });
+  };
+  // Adopts the branch the main checkout is on; nothing is checked out until a branch is picked.
+  const mainCheckoutBranch = mainCheckoutStatusQuery.data?.refName ?? null;
+  const onUseMainCheckout = () => {
+    setDraftThreadContext(draftId ?? threadRef, {
+      branch: mainCheckoutBranch,
+      worktreePath: null,
+      envMode: "local",
       projectRef: activeProjectRef,
     });
   };
@@ -781,6 +816,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             onEnvModeChange={onEnvModeChange}
             existingWorktrees={existingWorktrees}
             onUseWorktree={onUseWorktree}
+            onUseMainCheckout={onUseMainCheckout}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
           />
@@ -831,6 +867,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             onEnvModeChange={onEnvModeChange}
             existingWorktrees={existingWorktrees}
             onUseWorktree={onUseWorktree}
+            onUseMainCheckout={onUseMainCheckout}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
           />
@@ -873,6 +910,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               onEnvModeChange={onEnvModeChange}
               existingWorktrees={existingWorktrees}
               onUseWorktree={onUseWorktree}
+              onUseMainCheckout={onUseMainCheckout}
             />
           ) : null}
         </div>

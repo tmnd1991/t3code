@@ -488,15 +488,13 @@ describe("resolveExistingWorktreeOptions", () => {
           { path: "/wt/alpha", refName: "alpha" },
           { path: "/wt/used-earlier", refName: "used-earlier" },
           { path: "/wt/used-last", refName: "used-last" },
-          { path: "/wt/current", refName: "current" },
         ],
         threads: [
           thread("/wt/used-earlier", "2026-01-01T00:00:00.000Z"),
           thread("/wt/used-last", "2026-02-01T00:00:00.000Z"),
-          thread("/wt/current", "2026-03-01T00:00:00.000Z"),
           thread("/wt/zeta", "2026-04-01T00:00:00.000Z", "2026-04-02T00:00:00.000Z"),
         ],
-        currentWorktreePath: "/wt/current",
+        current: null,
       }),
     ).toEqual([
       { branch: "used-last", worktreePath: "/wt/used-last", previous: true },
@@ -507,27 +505,40 @@ describe("resolveExistingWorktreeOptions", () => {
     ]);
   });
 
-  it("offers no previous worktree once Git no longer lists it", () => {
+  it("keeps the current worktree in the list, even one Git no longer lists", () => {
+    const current = { worktreePath: "/wt/current", branch: "current" };
     expect(
       resolveExistingWorktreeOptions({
         listed: [{ path: "/wt/other", refName: "other" }],
         threads: [thread("/wt/deleted", "2026-02-01T00:00:00.000Z")],
-        currentWorktreePath: null,
+        current,
       }),
-    ).toEqual([{ branch: "other", worktreePath: "/wt/other", previous: false }]);
+    ).toEqual([
+      { branch: "current", worktreePath: "/wt/current", previous: false },
+      { branch: "other", worktreePath: "/wt/other", previous: false },
+    ]);
+    expect(
+      resolveExistingWorktreeOptions({
+        listed: [{ path: "/wt/current", refName: "current" }],
+        threads: [],
+        current,
+      }),
+    ).toEqual([{ branch: "current", worktreePath: "/wt/current", previous: false }]);
   });
 
-  it("offers the worktree a thread used last until the list loads", () => {
+  it("offers the worktree a thread used last, and the current one, until the list loads", () => {
     expect(
       resolveExistingWorktreeOptions({
         listed: null,
         threads: [
           thread("/wt/earlier", "2026-01-01T00:00:00.000Z"),
           thread("/wt/last", "2026-02-01T00:00:00.000Z"),
-          thread("/wt/current", "2026-03-01T00:00:00.000Z"),
         ],
-        currentWorktreePath: "/wt/current",
+        current: { worktreePath: "/wt/current", branch: "current" },
       }),
-    ).toEqual([{ branch: "thread//wt/last", worktreePath: "/wt/last", previous: true }]);
+    ).toEqual([
+      { branch: "thread//wt/last", worktreePath: "/wt/last", previous: true },
+      { branch: "current", worktreePath: "/wt/current", previous: false },
+    ]);
   });
 });
