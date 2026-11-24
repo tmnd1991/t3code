@@ -9,9 +9,13 @@ import {
   resolveEnvModeLabel,
   resolveLockedWorkspaceLabel,
   type EnvMode,
+  type ExistingWorktreeOption,
 } from "./BranchToolbar.logic";
 import { useComposerMenuProps } from "./chat/composerEventScope";
-import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
+import {
+  EXISTING_WORKTREE_VALUE_PREFIX,
+  ExistingWorktreeItemContent,
+} from "./ExistingWorktreeItemContent";
 import {
   Select,
   SelectGroup,
@@ -25,17 +29,14 @@ import { useAtomValue } from "@effect/atom-react";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 
-const PREVIOUS_WORKTREE_SELECT_VALUE = "previous-worktree";
-
 interface BranchToolbarEnvModeSelectorProps {
   forceNewWorktree?: boolean;
   envLocked: boolean;
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
   onEnvModeChange: (mode: EnvMode) => void;
-  previousWorktreeLabel?: string | null;
-  previousWorktreeBranch?: string | null;
-  onUsePreviousWorktree?: () => void;
+  existingWorktrees?: readonly ExistingWorktreeOption[];
+  onUseWorktree?: (option: ExistingWorktreeOption) => void;
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
@@ -44,9 +45,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   effectiveEnvMode,
   activeWorktreePath,
   onEnvModeChange,
-  previousWorktreeLabel,
-  previousWorktreeBranch = null,
-  onUsePreviousWorktree,
+  existingWorktrees = [],
+  onUseWorktree,
 }: BranchToolbarEnvModeSelectorProps) {
   const gt = useGT();
   const m = useMessages();
@@ -55,16 +55,17 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
     useAtomValue(primaryServerKeybindingsAtom),
     "composer.workspace",
   );
-  const showPreviousWorktree = Boolean(previousWorktreeLabel && onUsePreviousWorktree);
+  const worktreeOptions = onUseWorktree ? existingWorktrees : [];
   const envModeItems = [
     {
       value: "local",
       label: resolveCurrentWorkspaceLabel(activeWorktreePath, m),
     },
     { value: "worktree", label: resolveEnvModeLabel("worktree", m) },
-    ...(showPreviousWorktree && previousWorktreeLabel
-      ? [{ value: PREVIOUS_WORKTREE_SELECT_VALUE, label: previousWorktreeLabel }]
-      : []),
+    ...worktreeOptions.map((option) => ({
+      value: `${EXISTING_WORKTREE_VALUE_PREFIX}${option.worktreePath}`,
+      label: option.branch ?? option.worktreePath,
+    })),
   ];
 
   const stopContextMenuMouseDown = (event: ReactMouseEvent) => {
@@ -112,8 +113,10 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       modal={false}
       value={effectiveEnvMode}
       onValueChange={(value: string | null) => {
-        if (value === PREVIOUS_WORKTREE_SELECT_VALUE) {
-          onUsePreviousWorktree?.();
+        if (value?.startsWith(EXISTING_WORKTREE_VALUE_PREFIX)) {
+          const worktreePath = value.slice(EXISTING_WORKTREE_VALUE_PREFIX.length);
+          const option = worktreeOptions.find((entry) => entry.worktreePath === worktreePath);
+          if (option) onUseWorktree?.(option);
           return;
         }
         onEnvModeChange(value as EnvMode);
@@ -154,7 +157,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       <SelectPopup
         alignItemWithTrigger={false}
         {...composerFloatingLayerProps}
-        className={showPreviousWorktree ? "w-[min(21rem,calc(100vw-2rem))]" : undefined}
+        className={worktreeOptions.length > 0 ? "w-[min(21rem,calc(100vw-2rem))]" : undefined}
       >
         <SelectGroup>
           <SelectGroupLabel>
@@ -176,12 +179,22 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               {resolveEnvModeLabel("worktree", m)}
             </span>
           </SelectItem>
-          {showPreviousWorktree && previousWorktreeLabel ? (
-            <SelectItem value={PREVIOUS_WORKTREE_SELECT_VALUE}>
-              <PreviousWorktreeItemContent branch={previousWorktreeBranch} />
-            </SelectItem>
-          ) : null}
         </SelectGroup>
+        {worktreeOptions.length > 0 ? (
+          <SelectGroup>
+            <SelectGroupLabel>
+              <T>Existing worktrees</T>
+            </SelectGroupLabel>
+            {worktreeOptions.map((option) => (
+              <SelectItem
+                key={option.worktreePath}
+                value={`${EXISTING_WORKTREE_VALUE_PREFIX}${option.worktreePath}`}
+              >
+                <ExistingWorktreeItemContent option={option} />
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ) : null}
       </SelectPopup>
     </Select>
   );

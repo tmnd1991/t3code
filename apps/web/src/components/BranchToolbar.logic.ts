@@ -150,12 +150,19 @@ export function resolveLockedWorkspaceLabel(
     : resolve(msg("Local checkout"));
 }
 
-export interface PreviousWorktreeSeed {
-  branch: string | null;
-  worktreePath: string;
+export interface ExistingWorktreeOption {
+  readonly branch: string | null;
+  readonly worktreePath: string;
+  /** Most recently used by one of the project's threads. */
+  readonly previous: boolean;
 }
 
-export function resolvePreviousWorktreeSeed(input: {
+/**
+ * Worktrees a draft can move into, most recently used by a thread first. Until the repository's
+ * list loads (or when it cannot), only the worktree a thread used last is offered.
+ */
+export function resolveExistingWorktreeOptions(input: {
+  listed: ReadonlyArray<{ path: string; refName: string | null }> | null;
   threads: ReadonlyArray<{
     branch: string | null;
     worktreePath: string | null;
@@ -163,38 +170,48 @@ export function resolvePreviousWorktreeSeed(input: {
     archivedAt?: string | null;
   }>;
   currentWorktreePath: string | null;
-}): PreviousWorktreeSeed | null {
-  let latest: { branch: string | null; worktreePath: string; updatedAt: number } | null = null;
+}): ExistingWorktreeOption[] {
+  const lastUsed = new Map<string, { branch: string | null; updatedAt: number }>();
   for (const thread of input.threads) {
-    if (
-      !thread.worktreePath ||
-      thread.worktreePath === input.currentWorktreePath ||
-      (thread.archivedAt ?? null) !== null
-    ) {
-      continue;
-    }
+    if (!thread.worktreePath || (thread.archivedAt ?? null) !== null) continue;
     const updatedAt = toSortableTimestamp(thread.updatedAt);
-    if (updatedAt === null) {
-      continue;
-    }
-    if (latest === null || updatedAt > latest.updatedAt) {
-      latest = {
-        branch: thread.branch,
-        worktreePath: thread.worktreePath,
-        updatedAt,
-      };
+    if (updatedAt === null) continue;
+    const seen = lastUsed.get(thread.worktreePath);
+    if (seen === undefined || updatedAt > seen.updatedAt) {
+      lastUsed.set(thread.worktreePath, { branch: thread.branch, updatedAt });
     }
   }
-  return latest === null ? null : { branch: latest.branch, worktreePath: latest.worktreePath };
-}
 
-export function resolvePreviousWorktreeLabel(
-  seed: PreviousWorktreeSeed,
-  resolve: MessageResolver = m,
-): string {
-  return seed.branch
-    ? resolve(msg("Previous worktree ({branch})", { branch: seed.branch }))
-    : resolve(msg("Previous worktree"));
+  type Candidate = { branch: string | null; worktreePath: string; updatedAt: number | null };
+  let candidates: Candidate[] = [];
+  if (input.listed !== null) {
+    candidates = input.listed.map((worktree) => ({
+      branch: worktree.refName,
+      worktreePath: worktree.path,
+      updatedAt: lastUsed.get(worktree.path)?.updatedAt ?? null,
+    }));
+  } else {
+    for (const [worktreePath, used] of lastUsed) {
+      if (worktreePath === input.currentWorktreePath) continue;
+      const latest = candidates[0];
+      if (latest === undefined || used.updatedAt > (latest.updatedAt ?? -Infinity)) {
+        candidates = [{ worktreePath, ...used }];
+      }
+    }
+  }
+
+  const options = candidates
+    .filter((candidate) => candidate.worktreePath !== input.currentWorktreePath)
+    .toSorted(
+      (left, right) =>
+        (right.updatedAt ?? -Infinity) - (left.updatedAt ?? -Infinity) ||
+        (left.branch ?? left.worktreePath).localeCompare(right.branch ?? right.worktreePath),
+    );
+  return options.map((option, index) => ({
+    branch: option.branch,
+    worktreePath: option.worktreePath,
+    previous: index === 0 && option.updatedAt !== null,
+  }));
 }
 
 export function resolveEffectiveEnvMode(input: {

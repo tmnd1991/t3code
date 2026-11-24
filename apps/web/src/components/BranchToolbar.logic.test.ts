@@ -13,6 +13,7 @@ import {
   resolveBranchSelectionTarget,
   resolveDraftEnvModeAfterBranchChange,
   resolveEffectiveEnvMode,
+  resolveExistingWorktreeOptions,
   resolveBranchToolbarPrBranch,
   resolveConfirmedSelectedRef,
   resolveDefaultWorktreeBaseBranch,
@@ -467,5 +468,66 @@ describe("resolveConfirmedSelectedRef", () => {
     expect(resolveConfirmedSelectedRef(listed, refs === null ? null : { refs }).worktreePath).toBe(
       expected,
     );
+  });
+});
+
+describe("resolveExistingWorktreeOptions", () => {
+  const thread = (worktreePath: string, updatedAt: string, archivedAt: string | null = null) => ({
+    branch: `thread/${worktreePath}`,
+    worktreePath,
+    updatedAt,
+    archivedAt,
+  });
+
+  it("lists every other worktree, the one a thread used last first", () => {
+    expect(
+      resolveExistingWorktreeOptions({
+        listed: [
+          { path: "/wt/zeta", refName: "zeta" },
+          { path: "/wt/detached", refName: null },
+          { path: "/wt/alpha", refName: "alpha" },
+          { path: "/wt/used-earlier", refName: "used-earlier" },
+          { path: "/wt/used-last", refName: "used-last" },
+          { path: "/wt/current", refName: "current" },
+        ],
+        threads: [
+          thread("/wt/used-earlier", "2026-01-01T00:00:00.000Z"),
+          thread("/wt/used-last", "2026-02-01T00:00:00.000Z"),
+          thread("/wt/current", "2026-03-01T00:00:00.000Z"),
+          thread("/wt/zeta", "2026-04-01T00:00:00.000Z", "2026-04-02T00:00:00.000Z"),
+        ],
+        currentWorktreePath: "/wt/current",
+      }),
+    ).toEqual([
+      { branch: "used-last", worktreePath: "/wt/used-last", previous: true },
+      { branch: "used-earlier", worktreePath: "/wt/used-earlier", previous: false },
+      { branch: null, worktreePath: "/wt/detached", previous: false },
+      { branch: "alpha", worktreePath: "/wt/alpha", previous: false },
+      { branch: "zeta", worktreePath: "/wt/zeta", previous: false },
+    ]);
+  });
+
+  it("offers no previous worktree once Git no longer lists it", () => {
+    expect(
+      resolveExistingWorktreeOptions({
+        listed: [{ path: "/wt/other", refName: "other" }],
+        threads: [thread("/wt/deleted", "2026-02-01T00:00:00.000Z")],
+        currentWorktreePath: null,
+      }),
+    ).toEqual([{ branch: "other", worktreePath: "/wt/other", previous: false }]);
+  });
+
+  it("offers the worktree a thread used last until the list loads", () => {
+    expect(
+      resolveExistingWorktreeOptions({
+        listed: null,
+        threads: [
+          thread("/wt/earlier", "2026-01-01T00:00:00.000Z"),
+          thread("/wt/last", "2026-02-01T00:00:00.000Z"),
+          thread("/wt/current", "2026-03-01T00:00:00.000Z"),
+        ],
+        currentWorktreePath: "/wt/current",
+      }),
+    ).toEqual([{ branch: "thread//wt/last", worktreePath: "/wt/last", previous: true }]);
   });
 });

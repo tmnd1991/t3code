@@ -3069,6 +3069,44 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
   );
 
+  it.effect("lists the other checkouts a thread could reuse, including detached ones", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const cwd = yield* makeTmpDir();
+      yield* initRepoWithCommit(cwd);
+      const branchWorktree = yield* makeTmpDir();
+      const detachedWorktree = yield* makeTmpDir();
+      const deletedWorktree = yield* makeTmpDir();
+      yield* git(cwd, ["worktree", "add", "-b", "feature/listed", branchWorktree]);
+      yield* git(cwd, ["worktree", "add", "--detach", detachedWorktree]);
+      yield* git(cwd, ["worktree", "add", "-b", "feature/deleted", deletedWorktree]);
+      yield* fileSystem.remove(deletedWorktree, { recursive: true });
+
+      // Git orders linked worktrees by their generated admin directory names.
+      const byPath = (worktrees: ReadonlyArray<{ path: string; refName: string | null }>) =>
+        worktrees.toSorted((left, right) => left.path.localeCompare(right.path));
+      const listed = (from: string) =>
+        driver.listWorktrees(from).pipe(Effect.map(({ worktrees }) => byPath(worktrees)));
+
+      assert.deepStrictEqual(
+        yield* listed(cwd),
+        byPath([
+          { path: branchWorktree, refName: "feature/listed" },
+          { path: detachedWorktree, refName: null },
+        ]),
+      );
+      const initialBranch = yield* git(cwd, ["branch", "--show-current"]);
+      assert.deepStrictEqual(
+        yield* listed(branchWorktree),
+        byPath([
+          { path: cwd, refName: initialBranch },
+          { path: detachedWorktree, refName: null },
+        ]),
+      );
+    }),
+  );
+
   it.effect("keeps large change sets available for status and commit preparation", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTmpDir();

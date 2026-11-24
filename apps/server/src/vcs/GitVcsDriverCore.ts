@@ -334,18 +334,30 @@ function paginateBranches(input: {
   };
 }
 
-function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
-  const worktreePaths = new Map<string, string>();
+interface WorktreeListEntry {
+  readonly path: string;
+  readonly branch: string | null;
+  readonly bare: boolean;
+}
+
+/**
+ * Parses NUL-separated `git worktree list --porcelain` records. A `prunable` record's directory
+ * is gone and another checkout may now sit there, so those are skipped.
+ */
+function parseWorktreeList(stdout: string): WorktreeListEntry[] {
+  const entries: WorktreeListEntry[] = [];
   let currentPath: string | null = null;
   let currentBranch: string | null = null;
+  let currentBare = false;
   let currentPrunable = false;
 
   const flush = () => {
-    if (currentPath !== null && currentBranch !== null && !currentPrunable) {
-      worktreePaths.set(currentBranch, currentPath);
+    if (currentPath !== null && !currentPrunable) {
+      entries.push({ path: currentPath, branch: currentBranch, bare: currentBare });
     }
     currentPath = null;
     currentBranch = null;
+    currentBare = false;
     currentPrunable = false;
   };
 
@@ -356,12 +368,22 @@ function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
       currentPath = field.slice("worktree ".length);
     } else if (field.startsWith("branch refs/heads/")) {
       currentBranch = field.slice("branch refs/heads/".length);
+    } else if (field === "bare") {
+      currentBare = true;
     } else if (field === "prunable" || field.startsWith("prunable ")) {
       currentPrunable = true;
     }
   }
   flush();
 
+  return entries;
+}
+
+function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
+  const worktreePaths = new Map<string, string>();
+  for (const entry of parseWorktreeList(stdout)) {
+    if (entry.branch !== null) worktreePaths.set(entry.branch, entry.path);
+  }
   return worktreePaths;
 }
 
@@ -5647,6 +5669,40 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   // Single-flight only: concurrent ref lists share one read, and none outlives a checkout.
+  const listWorktrees: GitVcsDriver.GitVcsDriver["Service"]["listWorktrees"] = Effect.fn(
+    "GitVcsDriver.listWorktrees",
+  )(function* (cwd) {
+    const repositoryPaths = yield* resolveRepositoryPaths(cwd).pipe(
+      Effect.catchTags({
+        GitCommandError: (error) =>
+          isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
+      }),
+    );
+    if (repositoryPaths === null) return { worktrees: [] };
+    const result = yield* executeWorktreeList("GitVcsDriver.listWorktrees", cwd, [], {
+      allowNonZeroExit: true,
+      maxOutputBytes: 16 * 1024 * 1024,
+    });
+    if (result.exitCode !== 0) return { worktrees: [] };
+    const candidates = parseWorktreeList(result.stdout)
+      .filter((entry) => !entry.bare)
+      .map((entry) => ({
+        path: path.normalize(path.resolve(cwd, entry.path)),
+        refName: entry.branch,
+      }))
+      .filter((entry) => entry.path !== repositoryPaths.worktreeRoot);
+    const worktrees = yield* Effect.filter(
+      candidates,
+      (entry) =>
+        fileSystem.stat(entry.path).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        ),
+      { concurrency: 16 },
+    );
+    return { worktrees };
+  });
+
   const listRefsCurrentBranchCache = yield* Cache.makeWith(
     (cwd: string) => readCurrentBranch("GitVcsDriver.listRefs.currentBranch", cwd),
     { capacity: REPOSITORY_PATHS_CACHE_CAPACITY, timeToLive: () => Duration.zero },
@@ -7030,15 +7086,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const listWorktreePaths: GitVcsDriver.GitVcsDriver["Service"]["listWorktreePaths"] = (cwd) =>
     executeWorktreeList("GitVcsDriver.listWorktreePaths", cwd, []).pipe(
-      // A `prunable` record's directory is gone; another checkout may now sit there.
       Effect.map(({ stdout }) =>
-        stdout.split("\0\0").flatMap((record) => {
-          const fields = record.split("\0");
-          const worktree = fields.find((field) => field.startsWith("worktree "));
-          return worktree === undefined || fields.some((field) => field.startsWith("prunable"))
-            ? []
-            : [path.resolve(cwd, worktree.slice("worktree ".length))];
-        }),
+        parseWorktreeList(stdout).map((entry) => path.resolve(cwd, entry.path)),
       ),
     );
 
@@ -7116,6 +7165,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     readBranchBase,
     resolveBranchName,
     listRefs,
+    listWorktrees,
     createWorktree: Effect.fnUntraced(function* (input, options) {
       return yield* createWorktree(input, options).pipe(
         Effect.ensuring(invalidateWorktreeCreationCaches(input.cwd)),

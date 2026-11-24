@@ -3334,6 +3334,7 @@ export const layerWsRpc = (
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
         [WS_METHODS.vcsListRefs]: (input) => gitWorkflow.listRefs(input),
+        [WS_METHODS.vcsListWorktrees]: (input) => gitWorkflow.listWorktrees(input),
         [WS_METHODS.vcsCreateWorktree]: (input) =>
           // A project that tracks repositories gets a task folder, as its new worktree threads do.
           taskFolders.createForProjectFolder(input, { projectCommands }).pipe(

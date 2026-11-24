@@ -156,6 +156,11 @@ export const VcsListRefsInput = Schema.Struct({
 });
 export type VcsListRefsInput = typeof VcsListRefsInput.Type;
 
+export const VcsListWorktreesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsListWorktreesInput = typeof VcsListWorktreesInput.Type;
+
 export const VcsCreateWorktreeInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: GitRefName,
@@ -301,6 +306,19 @@ export const VcsListRefsResult = Schema.Struct({
   totalCount: NonNegativeInt,
 });
 export type VcsListRefsResult = typeof VcsListRefsResult.Type;
+
+export const VcsListedWorktree = Schema.Struct({
+  path: TrimmedNonEmptyStringSchema,
+  // Null for a detached HEAD.
+  refName: GitRefName.pipe(Schema.NullOr),
+});
+export type VcsListedWorktree = typeof VcsListedWorktree.Type;
+
+export const VcsListWorktreesResult = Schema.Struct({
+  // Other checkouts of the repository; the checkout containing `cwd` is left out.
+  worktrees: Schema.Array(VcsListedWorktree),
+});
+export type VcsListWorktreesResult = typeof VcsListWorktreesResult.Type;
 
 export const VcsCreateWorktreeResult = Schema.Struct({
   worktree: VcsWorktree,
