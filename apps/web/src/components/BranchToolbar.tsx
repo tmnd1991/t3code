@@ -49,10 +49,7 @@ import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSele
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
-import {
-  EXISTING_WORKTREE_VALUE_PREFIX,
-  ExistingWorktreeItemContent,
-} from "./ExistingWorktreeItemContent";
+import { ExistingWorktreeItemContent } from "./ExistingWorktreeItemContent";
 import { useEnvironmentQuery } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
 import { WorktreeRepositoriesControl } from "./WorktreeRepositoriesControl";
@@ -471,27 +468,15 @@ const RunContextSelector = memo(function RunContextSelector({
             <MenuGroupLabel>
               <T>Existing worktrees</T>
             </MenuGroupLabel>
-            <MenuRadioGroup
-              value={effectiveEnvMode}
-              onValueChange={(value) => {
-                const worktreePath = value.slice(EXISTING_WORKTREE_VALUE_PREFIX.length);
-                const option = existingWorktrees.find(
-                  (entry) => entry.worktreePath === worktreePath,
-                );
-                if (option) onUseWorktree(option);
-              }}
-            >
-              {existingWorktrees.map((option) => (
-                <MenuRadioItem
-                  key={option.worktreePath}
-                  disabled={envModeLocked}
-                  value={`${EXISTING_WORKTREE_VALUE_PREFIX}${option.worktreePath}`}
-                  closeOnClick
-                >
-                  <ExistingWorktreeItemContent option={option} />
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
+            {existingWorktrees.map((option) => (
+              <MenuItem
+                key={option.worktreePath}
+                disabled={envModeLocked}
+                onClick={() => onUseWorktree(option)}
+              >
+                <ExistingWorktreeItemContent option={option} />
+              </MenuItem>
+            ))}
           </MenuGroup>
         ) : null}
       </MenuPopup>
@@ -699,18 +684,18 @@ export const BranchToolbar = memo(function BranchToolbar({
   const effectiveEnvMode = forceNewWorktree ? "worktree" : envMode;
   const envModeLocked = envLocked || (isServerThread && activeWorktreePath !== null);
 
-  const canUsePreviousWorktree = !isServerThread && !envModeLocked && !forceNewWorktree;
-  const projectRefsForWorktreeLookup = canUsePreviousWorktree ? [activeProjectRef] : [];
+  const canUseExistingWorktree = !isServerThread && !envModeLocked && !forceNewWorktree;
+  const projectRefsForWorktreeLookup = canUseExistingWorktree ? [activeProjectRef] : [];
   const projectThreads = useThreadShellsForProjectRefs(projectRefsForWorktreeLookup);
   const listedWorktreesQuery = useEnvironmentQuery(
-    canUsePreviousWorktree && showGitControls && activeProject
+    canUseExistingWorktree && showGitControls && activeProject
       ? vcsEnvironment.listWorktrees({
           environmentId,
           input: { cwd: activeProject.workspaceRoot },
         })
       : null,
   );
-  const existingWorktrees = canUsePreviousWorktree
+  const existingWorktrees = canUseExistingWorktree
     ? resolveExistingWorktreeOptions({
         listed: listedWorktreesQuery.data?.worktrees ?? null,
         threads: projectThreads,
@@ -732,13 +717,13 @@ export const BranchToolbar = memo(function BranchToolbar({
     () => ({
       openBranchPicker: () => branchSelectorRef.current?.open(),
       usePreviousWorktree: () => {
-        if (!showGitControls || !canUsePreviousWorktree || !previousWorktree) return;
+        if (!showGitControls || !canUseExistingWorktree || !previousWorktree) return;
         onUseWorktree(previousWorktree);
         onComposerFocusRequest?.();
       },
     }),
     [
-      canUsePreviousWorktree,
+      canUseExistingWorktree,
       onComposerFocusRequest,
       onUseWorktree,
       previousWorktree,

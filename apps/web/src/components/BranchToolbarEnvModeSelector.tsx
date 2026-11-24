@@ -13,8 +13,9 @@ import {
 } from "./BranchToolbar.logic";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
-  EXISTING_WORKTREE_VALUE_PREFIX,
+  existingWorktreeValue,
   ExistingWorktreeItemContent,
+  findExistingWorktree,
 } from "./ExistingWorktreeItemContent";
 import {
   Select,
@@ -63,7 +64,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
     },
     { value: "worktree", label: resolveEnvModeLabel("worktree", m) },
     ...worktreeOptions.map((option) => ({
-      value: `${EXISTING_WORKTREE_VALUE_PREFIX}${option.worktreePath}`,
+      value: existingWorktreeValue(option),
       label: option.branch ?? option.worktreePath,
     })),
   ];
@@ -113,10 +114,9 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       modal={false}
       value={effectiveEnvMode}
       onValueChange={(value: string | null) => {
-        if (value?.startsWith(EXISTING_WORKTREE_VALUE_PREFIX)) {
-          const worktreePath = value.slice(EXISTING_WORKTREE_VALUE_PREFIX.length);
-          const option = worktreeOptions.find((entry) => entry.worktreePath === worktreePath);
-          if (option) onUseWorktree?.(option);
+        const option = findExistingWorktree(worktreeOptions, value);
+        if (option) {
+          onUseWorktree?.(option);
           return;
         }
         onEnvModeChange(value as EnvMode);
@@ -186,10 +186,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               <T>Existing worktrees</T>
             </SelectGroupLabel>
             {worktreeOptions.map((option) => (
-              <SelectItem
-                key={option.worktreePath}
-                value={`${EXISTING_WORKTREE_VALUE_PREFIX}${option.worktreePath}`}
-              >
+              <SelectItem key={option.worktreePath} value={existingWorktreeValue(option)}>
                 <ExistingWorktreeItemContent option={option} />
               </SelectItem>
             ))}

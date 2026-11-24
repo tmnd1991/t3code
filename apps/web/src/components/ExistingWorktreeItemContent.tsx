@@ -4,7 +4,19 @@ import { FolderGitIcon, HistoryIcon } from "lucide-react";
 import type { ExistingWorktreeOption } from "./BranchToolbar.logic";
 import { MiddleTruncate } from "./ui/middle-truncate";
 
-export const EXISTING_WORKTREE_VALUE_PREFIX = "existing-worktree:";
+const EXISTING_WORKTREE_VALUE_PREFIX = "existing-worktree:";
+
+/** Select values are strings, so an option travels through the menu as its prefixed path. */
+export const existingWorktreeValue = (option: ExistingWorktreeOption) =>
+  `${EXISTING_WORKTREE_VALUE_PREFIX}${option.worktreePath}`;
+
+export const findExistingWorktree = (
+  options: readonly ExistingWorktreeOption[],
+  value: string | null,
+) =>
+  value?.startsWith(EXISTING_WORKTREE_VALUE_PREFIX)
+    ? options.find((option) => existingWorktreeValue(option) === value)
+    : undefined;
 
 export function ExistingWorktreeItemContent({ option }: { option: ExistingWorktreeOption }) {
   const Icon = option.previous ? HistoryIcon : FolderGitIcon;

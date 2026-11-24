@@ -5668,7 +5668,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     yield* Cache.invalidate(repositoryPathsCache, repositoryPathsCacheKey);
   });
 
-  // Single-flight only: concurrent ref lists share one read, and none outlives a checkout.
   const listWorktrees: GitVcsDriver.GitVcsDriver["Service"]["listWorktrees"] = Effect.fn(
     "GitVcsDriver.listWorktrees",
   )(function* (cwd) {
@@ -5703,6 +5702,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return { worktrees };
   });
 
+  // Single-flight only: concurrent ref lists share one read, and none outlives a checkout.
   const listRefsCurrentBranchCache = yield* Cache.makeWith(
     (cwd: string) => readCurrentBranch("GitVcsDriver.listRefs.currentBranch", cwd),
     { capacity: REPOSITORY_PATHS_CACHE_CAPACITY, timeToLive: () => Duration.zero },

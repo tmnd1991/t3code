@@ -183,22 +183,21 @@ export function resolveExistingWorktreeOptions(input: {
   }
 
   type Candidate = { branch: string | null; worktreePath: string; updatedAt: number | null };
-  let candidates: Candidate[] = [];
-  if (input.listed !== null) {
-    candidates = input.listed.map((worktree) => ({
+  const fromListed = (listed: NonNullable<typeof input.listed>): Candidate[] =>
+    listed.map((worktree) => ({
       branch: worktree.refName,
       worktreePath: worktree.path,
       updatedAt: lastUsed.get(worktree.path)?.updatedAt ?? null,
     }));
-  } else {
-    for (const [worktreePath, used] of lastUsed) {
-      if (worktreePath === input.currentWorktreePath) continue;
-      const latest = candidates[0];
-      if (latest === undefined || used.updatedAt > (latest.updatedAt ?? -Infinity)) {
-        candidates = [{ worktreePath, ...used }];
-      }
-    }
-  }
+  // Until the repository's list loads, only the worktree a thread used last is known to exist.
+  const fromThreads = (): Candidate[] => {
+    const [latest] = [...lastUsed]
+      .filter(([worktreePath]) => worktreePath !== input.currentWorktreePath)
+      .map(([worktreePath, used]) => ({ worktreePath, ...used }))
+      .toSorted((left, right) => right.updatedAt - left.updatedAt);
+    return latest ? [latest] : [];
+  };
+  const candidates = input.listed ? fromListed(input.listed) : fromThreads();
 
   const options = candidates
     .filter((candidate) => candidate.worktreePath !== input.currentWorktreePath)
