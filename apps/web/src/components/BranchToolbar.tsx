@@ -49,6 +49,7 @@ import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSele
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
+import { WorktreeBranchChoice, type WorktreeBranchChoiceHandle } from "./WorktreeBranchChoice";
 import {
   existingWorktreeValue,
   ExistingWorktreeItemContent,
@@ -690,6 +691,7 @@ export const BranchToolbar = memo(function BranchToolbar({
 }: BranchToolbarProps) {
   const m = useMessages();
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
+  const branchChoiceRef = useRef<WorktreeBranchChoiceHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   // The composer retains resolved thread details while bootstrap cleanup can remove its shell.
@@ -750,7 +752,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   useImperativeHandle(
     ref,
     () => ({
-      openBranchPicker: () => branchSelectorRef.current?.open(),
+      openBranchPicker: () => (branchChoiceRef.current ?? branchSelectorRef.current)?.open(),
       usePreviousWorktree: () => {
         if (!showGitControls || !canUseExistingWorktree || !previousWorktree) return;
         onUseWorktree(previousWorktree);
@@ -787,6 +789,23 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   const startsNewWorktree =
     showGitControls && effectiveEnvMode === "worktree" && activeWorktreePath === null;
+  // A draft's New worktree thread chooses its own branch; Start from is the base for a new one.
+  const offersBranchChoice =
+    startsNewWorktree && !forceNewWorktree && !isServerThread && showBranchControls;
+  const startsFromExistingBranch = draftThread?.worktreeBranch?.kind === "existing";
+  const branchChoice = (displayMode: "toolbar" | "panel", ref?: typeof branchChoiceRef) => (
+    <WorktreeBranchChoice
+      {...(ref ? { ref } : {})}
+      displayMode={displayMode}
+      environmentId={environmentId}
+      threadId={threadId}
+      projectId={projectId}
+      {...(draftId ? { draftId } : {})}
+      projectCwd={activeProject.workspaceRoot}
+      className={displayMode === "panel" ? "w-full" : "min-w-0"}
+      {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
+    />
+  );
   const offersRepositoryChoice =
     startsNewWorktree &&
     !isServerThread &&
@@ -821,7 +840,8 @@ export const BranchToolbar = memo(function BranchToolbar({
             onAddToMachine={onAddToMachine}
           />
         ) : null}
-        {panelSection !== "workspace" ? (
+        {panelSection !== "workspace" && offersBranchChoice ? branchChoice("panel") : null}
+        {panelSection !== "workspace" && !(offersBranchChoice && startsFromExistingBranch) ? (
           <BranchToolbarBranchSelector
             displayMode="panel"
             className="w-full"
@@ -873,6 +893,9 @@ export const BranchToolbar = memo(function BranchToolbar({
           />
         </div>
       ) : null}
+      {offersBranchChoice ? (
+        <div className="contents @xl/composer-surface:hidden">{branchChoice("toolbar")}</div>
+      ) : null}
       {showGitControls || showEnvironmentIndicator ? (
         <div
           className={cn(
@@ -913,6 +936,16 @@ export const BranchToolbar = memo(function BranchToolbar({
               onUseMainCheckout={onUseMainCheckout}
             />
           ) : null}
+          {offersBranchChoice ? (
+            <>
+              <Separator
+                orientation="vertical"
+                className="mx-0.5 h-3.5!"
+                data-composer-context-control
+              />
+              {branchChoice("toolbar", branchChoiceRef)}
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -938,7 +971,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 )}
           </span>
         ) : null
-      ) : (
+      ) : offersBranchChoice && startsFromExistingBranch ? null : (
         <BranchToolbarBranchSelector
           forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}
