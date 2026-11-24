@@ -3,6 +3,7 @@ import { withRecordIdTable } from "./orchestrationV2IdTable.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import * as SchemaAST from "effect/SchemaAST";
 import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaTransformation from "effect/SchemaTransformation";
@@ -807,6 +808,14 @@ export const OrchestrationV2ThreadLaunchWorkspaceStrategy = Schema.Union([
     ),
   }),
 ]);
+/** What an agent may ask for: the app-only `checkoutExistingBranch` stays out of its tool list. */
+export const OrchestrationV2AgentThreadLaunchWorkspaceStrategy = Schema.Union([
+  ...OrchestrationV2ThreadLaunchWorkspaceStrategy.members.slice(0, 2),
+  OrchestrationV2ThreadLaunchWorkspaceStrategy.members[2].mapFields(
+    Struct.omit(["checkoutExistingBranch"]),
+  ),
+] as const);
+
 export type OrchestrationV2ThreadLaunchWorkspaceStrategy =
   typeof OrchestrationV2ThreadLaunchWorkspaceStrategy.Type;
 
